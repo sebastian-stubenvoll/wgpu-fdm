@@ -1,4 +1,4 @@
-name: linting
+name: CI
 on: [push, pull_request]
 
 # Make sure CI fails on all warnings, including Clippy lints
@@ -7,9 +7,23 @@ env:
 
 jobs:
   clippy_check:
+    name: Clippy check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: clippiny linting
         run: cargo clippy --all-targets --all-features
+
+  formatting:
+    name: Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+          target: thumbv6m-none-eabi
+      - run: cargo fmt -- --check
 
