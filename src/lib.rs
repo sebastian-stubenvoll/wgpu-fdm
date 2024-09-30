@@ -7,7 +7,7 @@ const NODE_COUNT: usize = 128;
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, encase::ShaderType)]
-pub struct Node {
+struct Node {
     positions: [f32; 2],
     velocities: [f32; 2],
 }
@@ -482,12 +482,13 @@ impl State {
 
     pub fn set_displacements_from_fn<F>(&mut self, f: F) -> Result<(), Box<dyn Error>>
     where
-        F: Fn((usize, &mut Node)),
+        F: Fn((usize, &mut f32)),
     {
-        self.nodes
-            .iter_mut()
-            .enumerate()
-            .for_each(|(index, node)| f((index, node)));
+        self.nodes.iter_mut().enumerate().for_each(|(index, node)| {
+            node.velocities = [0.0; 2];
+            f((index, &mut node.positions[0]));
+            f((index, &mut node.positions[1]));
+        });
         let mut buffer = encase::StorageBuffer::new(Vec::new());
         buffer.write(&self.nodes)?;
         self.queue
