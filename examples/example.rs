@@ -1,7 +1,4 @@
 // An example to demonstrate various functionalities of this crate
-
-use pollster; // Used for a resolving futures
-
 fn main() {
     // Obtain a new FDM-Simulation state
     let state = wgpu_fdm::State::new();
@@ -31,9 +28,9 @@ fn main() {
     // E.g. as a parabola:
     let mut displacements = [0.0; 128];
     let mid = (127 - 1) as f32 / 2.0;
-    for i in 0..128 {
-        let i_f32 = i as f32;
-        displacements[i] = (1.0 - ((i_f32 - mid) / mid).powi(2)) * 0.3;
+    for (index, displacement) in displacements.iter_mut().enumerate() {
+        let index_f32 = index as f32;
+        *displacement = (1.0 - ((index_f32 - mid) / mid).powi(2)) * 0.3;
     }
     state.set_displacements(displacements).unwrap();
 
