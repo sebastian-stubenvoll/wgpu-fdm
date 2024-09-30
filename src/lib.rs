@@ -5,14 +5,12 @@ use wgpu::util::DeviceExt;
 const CHUNK_SIZE: usize = 1024;
 const NODE_COUNT: usize = 128;
 
-
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, encase::ShaderType)]
 pub struct Node {
     positions: [f32; 2],
-    velocities:  [f32; 2],
+    velocities: [f32; 2],
 }
-
 
 #[repr(C)]
 #[derive(Debug, Copy, Clone, bytemuck::Pod, bytemuck::Zeroable, encase::ShaderType)]
@@ -43,8 +41,12 @@ pub enum StateError {
 impl Display for StateError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            StateError::AdapterRequest => { let _ = write!(f, "Failed to obtain adapter"); },
-            StateError::UnstableParams => { let _ = write!(f, "Unstable parameters"); },
+            StateError::AdapterRequest => {
+                let _ = write!(f, "Failed to obtain adapter");
+            }
+            StateError::UnstableParams => {
+                let _ = write!(f, "Unstable parameters");
+            }
         }
         Ok(())
     }
@@ -58,10 +60,10 @@ pub struct State {
     fdm_uniform: FDMUniform,
     fdm_uniform_buffer: wgpu::Buffer,
     compute_bind_group: wgpu::BindGroup,
-    nodes: [Node ;NODE_COUNT],
+    nodes: [Node; NODE_COUNT],
     nodes_buffer: wgpu::Buffer,
     speed_arr: [f32; NODE_COUNT],
-    speed_buffer: wgpu::Buffer, 
+    speed_buffer: wgpu::Buffer,
     output_buffer: wgpu::Buffer,
     staging_buffer: wgpu::Buffer,
     compute_pipeline: wgpu::ComputePipeline,
@@ -71,44 +73,44 @@ pub struct State {
 impl State {
     pub async fn new() -> Result<State, Box<dyn Error>> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
-            #[cfg(not(target_arch="wasm32"))]
+            #[cfg(not(target_arch = "wasm32"))]
             backends: wgpu::Backends::PRIMARY,
-            #[cfg(target_arch="wasm32")]
+            #[cfg(target_arch = "wasm32")]
             backends: wgpu::Backends::GL,
             ..Default::default()
         });
 
-
-
-        let adapter = instance.request_adapter(
-            &wgpu::RequestAdapterOptions {
+        let adapter = instance
+            .request_adapter(&wgpu::RequestAdapterOptions {
                 power_preference: wgpu::PowerPreference::HighPerformance,
                 compatible_surface: None,
                 force_fallback_adapter: false,
-            }
-        ).await.ok_or(StateError::AdapterRequest)?;
+            })
+            .await
+            .ok_or(StateError::AdapterRequest)?;
 
-        let (device, queue) = adapter.request_device(
-            &wgpu::DeviceDescriptor {
-                required_features: wgpu::Features::empty(),
-                required_limits: if cfg!(target_arch = "wasm32") {
-                    wgpu::Limits::downlevel_webgl2_defaults()
-                } else {
-                    wgpu::Limits::default()
+        let (device, queue) = adapter
+            .request_device(
+                &wgpu::DeviceDescriptor {
+                    required_features: wgpu::Features::empty(),
+                    required_limits: if cfg!(target_arch = "wasm32") {
+                        wgpu::Limits::downlevel_webgl2_defaults()
+                    } else {
+                        wgpu::Limits::default()
+                    },
+                    label: None,
                 },
-                label: None,
-            },
-            None,
-        ).await?;
+                None,
+            )
+            .await?;
 
         let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("FDM Shader"),
             source: wgpu::ShaderSource::Wgsl(include_str!("shaders/shader.wgsl").into()),
         });
 
-
         //Uniform Buffers
-        let fdm_uniform = FDMUniform { 
+        let fdm_uniform = FDMUniform {
             output_index: 80,
             chunk_size: CHUNK_SIZE as u32,
             node_count: NODE_COUNT as u32,
@@ -118,54 +120,47 @@ impl State {
             _pad: 0,
             _pad2: 0,
         };
-        let fdm_uniform_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("FDM Uniform Buffer"),
-                contents: bytemuck::cast_slice(&[fdm_uniform]),
-                usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
-            }
-        );
+        let fdm_uniform_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("FDM Uniform Buffer"),
+            contents: bytemuck::cast_slice(&[fdm_uniform]),
+            usage: wgpu::BufferUsages::UNIFORM | wgpu::BufferUsages::COPY_DST,
+        });
 
         let speed_arr: [f32; NODE_COUNT] = [90000.0; NODE_COUNT];
 
         //Node Buffers
-        let nodes = [Node { positions: [0.0, 0.0], velocities: [0.0, 0.0] }; NODE_COUNT];
+        let nodes = [Node {
+            positions: [0.0, 0.0],
+            velocities: [0.0, 0.0],
+        }; NODE_COUNT];
 
-
-        let nodes_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Node Buffer 0"),
-                contents: bytemuck::cast_slice(&nodes),
-                usage: wgpu::BufferUsages::STORAGE 
+        let nodes_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Node Buffer 0"),
+            contents: bytemuck::cast_slice(&nodes),
+            usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
+        });
 
-            });
-
-        let speed_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("speed buffer"),
-                contents: bytemuck::cast_slice(&speed_arr),
-                usage: wgpu::BufferUsages::STORAGE
+        let speed_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("speed buffer"),
+            contents: bytemuck::cast_slice(&speed_arr),
+            usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
-            }
-        );
+        });
 
         // Buffer whose contents will eventually be copied into the CPU staging buffer
         // We store this in GPU memory for CHUNK_SIZE passes, to minimize the calls to the
         // (expensive) buffer copy operation.
         let output = [0.0f32; CHUNK_SIZE];
-        let output_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("index_buffer"),
-                contents: bytemuck::cast_slice(&[output]),
-                usage: wgpu::BufferUsages::STORAGE
+        let output_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("index_buffer"),
+            contents: bytemuck::cast_slice(&[output]),
+            usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
-            }
-        );
-
+        });
 
         //Staging
         let staging_buffer = device.create_buffer(&wgpu::BufferDescriptor {
@@ -175,95 +170,94 @@ impl State {
             mapped_at_creation: false,
         });
 
-
         //Hacky, but this allows the shader to update the ringbuffer index by itself
-        let internal_indices = InternalIndices { idx: 2, save_location: 0 };
-        let index_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("index_buffer"),
-                contents: bytemuck::cast_slice(&[internal_indices]),
-                usage: wgpu::BufferUsages::STORAGE
+        let internal_indices = InternalIndices {
+            idx: 2,
+            save_location: 0,
+        };
+        let index_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("index_buffer"),
+            contents: bytemuck::cast_slice(&[internal_indices]),
+            usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
-            }
-        );
+        });
 
         let array_pointers = [0u32; CHUNK_SIZE];
-        let array_ptr_buffer = device.create_buffer_init(
-            &wgpu::util::BufferInitDescriptor {
-                label: Some("Array pointer buffer"),
-                contents: bytemuck::cast_slice(&[array_pointers]),
-                usage: wgpu::BufferUsages::STORAGE
+        let array_ptr_buffer = device.create_buffer_init(&wgpu::util::BufferInitDescriptor {
+            label: Some("Array pointer buffer"),
+            contents: bytemuck::cast_slice(&[array_pointers]),
+            usage: wgpu::BufferUsages::STORAGE
                 | wgpu::BufferUsages::COPY_DST
                 | wgpu::BufferUsages::COPY_SRC,
-            }
-        );
-
-        let compute_bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
-            entries: &[
-                wgpu::BindGroupLayoutEntry {
-                    binding: 0,
-                    visibility: wgpu::ShaderStages::COMPUTE,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Uniform,
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 1,
-                    visibility: wgpu::ShaderStages::COMPUTE ,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 2,
-                    visibility: wgpu::ShaderStages::COMPUTE ,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 3,
-                    visibility: wgpu::ShaderStages::COMPUTE ,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 4,
-                    visibility: wgpu::ShaderStages::COMPUTE ,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-                wgpu::BindGroupLayoutEntry {
-                    binding: 5,
-                    visibility: wgpu::ShaderStages::COMPUTE ,
-                    ty: wgpu::BindingType::Buffer {
-                        ty: wgpu::BufferBindingType::Storage { read_only: false },
-                        has_dynamic_offset: false,
-                        min_binding_size: None,
-                    },
-                    count: None,
-                },
-            ],
-            label: Some("Compute Bind Group Layout"),
         });
+
+        let compute_bind_group_layout =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                entries: &[
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 3,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 4,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 5,
+                        visibility: wgpu::ShaderStages::COMPUTE,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: false },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                ],
+                label: Some("Compute Bind Group Layout"),
+            });
 
         let compute_bind_group = device.create_bind_group(&wgpu::BindGroupDescriptor {
             layout: &compute_bind_group_layout,
@@ -293,18 +287,15 @@ impl State {
                     resource: array_ptr_buffer.as_entire_binding(),
                 },
             ],
-            label: Some("Compute Bind Group Layout")
+            label: Some("Compute Bind Group Layout"),
         });
 
-        let compute_pipeline_layout = device.create_pipeline_layout(
-            &wgpu::PipelineLayoutDescriptor {
+        let compute_pipeline_layout =
+            device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
                 label: Some("Compute Pipeline Layout"),
-                bind_group_layouts: &[
-                    &compute_bind_group_layout,
-                ],
+                bind_group_layouts: &[&compute_bind_group_layout],
                 push_constant_ranges: &[],
-            }
-        );
+            });
 
         //Uses the compute node buffer as storage buffer
         let compute_pipeline = device.create_compute_pipeline(&wgpu::ComputePipelineDescriptor {
@@ -312,9 +303,8 @@ impl State {
             layout: Some(&compute_pipeline_layout),
             module: &shader,
             entry_point: "compute_main",
-            compilation_options: Default::default(), 
+            compilation_options: Default::default(),
         });
-
 
         Ok(Self {
             device,
@@ -333,14 +323,13 @@ impl State {
         })
     }
 
-
     pub fn compute(&mut self) -> Result<Vec<f32>, Box<dyn Error>> {
-
         for _ in 0..2 {
-
-            let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("Compute Encoder"),
-            });
+            let mut encoder = self
+                .device
+                .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                    label: Some("Compute Encoder"),
+                });
             {
                 let mut compute_pass = encoder.begin_compute_pass(&wgpu::ComputePassDescriptor {
                     label: Some("Compute Pass"),
@@ -360,8 +349,16 @@ impl State {
         }
 
         // Begin memory transfer to CPU
-        let mut encoder = self.device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None});
-        encoder.copy_buffer_to_buffer(&self.output_buffer, 0, &self.staging_buffer, 0, self.buffer_size as u64);
+        let mut encoder = self
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor { label: None });
+        encoder.copy_buffer_to_buffer(
+            &self.output_buffer,
+            0,
+            &self.staging_buffer,
+            0,
+            self.buffer_size as u64,
+        );
         self.queue.submit(Some(encoder.finish()));
 
         let buffer_slice = self.staging_buffer.slice(..);
@@ -382,7 +379,10 @@ impl State {
     }
 
     pub fn set_wavespeeds(&mut self, speeds: &[f32; NODE_COUNT]) -> Result<(), Box<dyn Error>> {
-        let fastest = speeds.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+        let fastest = speeds
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
         if fastest * self.fdm_uniform.dt.powi(2) / self.fdm_uniform.dx.powi(2) > 1.0 {
             return Err(Box::new(StateError::UnstableParams));
         }
@@ -390,47 +390,54 @@ impl State {
         self.speed_arr.copy_from_slice(speeds);
         let mut buffer = encase::StorageBuffer::new(Vec::new());
         buffer.write(&self.speed_arr)?;
-        self.queue.write_buffer(
-            &self.speed_buffer,
-            0,
-            &buffer.into_inner(),
-        );
+        self.queue
+            .write_buffer(&self.speed_buffer, 0, &buffer.into_inner());
         Ok(())
     }
 
-    pub fn set_wavespeeds_from_fn<F>(&mut self, f: F) -> Result<(), Box<dyn Error>> where
-        F: Fn((usize, &mut f32)) {
+    pub fn set_wavespeeds_from_fn<F>(&mut self, f: F) -> Result<(), Box<dyn Error>>
+    where
+        F: Fn((usize, &mut f32)),
+    {
         let speeds_backup = self.speed_arr;
-        self.speed_arr.iter_mut()
+        self.speed_arr
+            .iter_mut()
             .enumerate()
             .for_each(|(index, value)| f((index, value)));
-        let fastest = self.speed_arr.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+        let fastest = self
+            .speed_arr
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
         if fastest * self.fdm_uniform.dt.powi(2) / self.fdm_uniform.dx.powi(2) > 1.0 {
             self.speed_arr = speeds_backup;
             return Err(Box::new(StateError::UnstableParams));
         }
         let mut buffer = encase::StorageBuffer::new(Vec::new());
         buffer.write(&self.speed_arr)?;
-        self.queue.write_buffer(
-            &self.speed_buffer,
-            0,
-            &buffer.into_inner(),
-        );
+        self.queue
+            .write_buffer(&self.speed_buffer, 0, &buffer.into_inner());
 
         Ok(())
     }
 
-    pub fn set_parameters(&mut self, 
+    pub fn set_parameters(
+        &mut self,
         dx: Option<f32>,
         dt: Option<f32>,
         dampening_factor: Option<f32>,
-        output_index: Option<u32>) -> Result<(), Box<dyn Error>> {
+        output_index: Option<u32>,
+    ) -> Result<(), Box<dyn Error>> {
         let dx = dx.unwrap_or(self.fdm_uniform.dx);
         let dt = dt.unwrap_or(self.fdm_uniform.dt);
         let dampening_factor = dampening_factor.unwrap_or(self.fdm_uniform.dampening_factor);
         let output_index = output_index.unwrap_or(self.fdm_uniform.output_index);
 
-        let fastest = self.speed_arr.iter().max_by(|a, b| a.partial_cmp(b).unwrap()).unwrap();
+        let fastest = self
+            .speed_arr
+            .iter()
+            .max_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap();
         if fastest * self.fdm_uniform.dt.powi(2) / self.fdm_uniform.dx.powi(2) > 1.0 {
             return Err(Box::new(StateError::UnstableParams));
         }
@@ -445,47 +452,46 @@ impl State {
 
         let mut buffer = encase::UniformBuffer::new(Vec::new());
         buffer.write(&self.fdm_uniform)?;
-        self.queue.write_buffer(
-            &self.fdm_uniform_buffer,
-            0,
-            &buffer.into_inner(),
-        );
+        self.queue
+            .write_buffer(&self.fdm_uniform_buffer, 0, &buffer.into_inner());
 
         Ok(())
     }
 
-    pub fn set_displacements(&mut self, displacements: [f32; NODE_COUNT]) -> Result<(), Box<dyn Error>> {
-
+    pub fn set_displacements(
+        &mut self,
+        displacements: [f32; NODE_COUNT],
+    ) -> Result<(), Box<dyn Error>> {
         //Hacky but we just set both Node arrays to the displacement?
-        let new_nodes = displacements.iter().map(|u| Node { positions: [*u, *u], velocities: [0.0, 0.0] })
+        let new_nodes = displacements
+            .iter()
+            .map(|u| Node {
+                positions: [*u, *u],
+                velocities: [0.0, 0.0],
+            })
             .collect::<Vec<Node>>();
 
         self.nodes.copy_from_slice(&new_nodes);
 
         let mut buffer = encase::StorageBuffer::new(Vec::new());
         buffer.write(&self.nodes)?;
-        self.queue.write_buffer(
-            &self.nodes_buffer,
-            0,
-            &buffer.into_inner(),
-        );
+        self.queue
+            .write_buffer(&self.nodes_buffer, 0, &buffer.into_inner());
         Ok(())
     }
 
-    pub fn set_displacements_from_fn<F>(&mut self, f: F) -> Result<(), Box<dyn Error>> where
-        F: Fn(( usize, &mut Node )) {
-        self.nodes.iter_mut()
+    pub fn set_displacements_from_fn<F>(&mut self, f: F) -> Result<(), Box<dyn Error>>
+    where
+        F: Fn((usize, &mut Node)),
+    {
+        self.nodes
+            .iter_mut()
             .enumerate()
-            .for_each(|(index, node)| f(( index, node )));
+            .for_each(|(index, node)| f((index, node)));
         let mut buffer = encase::StorageBuffer::new(Vec::new());
         buffer.write(&self.nodes)?;
-        self.queue.write_buffer(
-            &self.nodes_buffer,
-            0,
-            &buffer.into_inner(),
-        );
+        self.queue
+            .write_buffer(&self.nodes_buffer, 0, &buffer.into_inner());
         Ok(())
     }
 }
-
-
